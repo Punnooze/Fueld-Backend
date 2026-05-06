@@ -1,0 +1,40 @@
+import { Model } from 'mongoose';
+import { SettingsService } from '../settings/settings.service';
+import { CreateMeasurementDto } from './dto/create-measurement.dto';
+import { BodyMeasurementDocument } from './schemas/body-measurement.schema';
+export declare class MeasurementsService {
+    private measurementModel;
+    private readonly settingsService;
+    constructor(measurementModel: Model<BodyMeasurementDocument>, settingsService: SettingsService);
+    private computeBodyFat;
+    findAll(): Promise<BodyMeasurementDocument[]>;
+    findLatest(): Promise<{
+        bodyFatEstimate: number | null;
+        _id: import("mongoose").Types.ObjectId;
+        $locals: Record<string, unknown>;
+        $op: "save" | "validate" | "remove" | null;
+        $where: Record<string, unknown>;
+        baseModelName?: string;
+        collection: import("mongoose").Collection;
+        db: import("mongoose").Connection;
+        errors?: import("mongoose").Error.ValidationError;
+        isNew: boolean;
+        schema: import("mongoose").Schema;
+        date: string;
+        loggedAt: Date;
+        neck?: number;
+        chest?: number;
+        waist?: number;
+        hip?: number;
+        rightArm?: number;
+        leftArm?: number;
+        forearm?: number;
+        thigh?: number;
+        calf?: number;
+        __v: number;
+        id: string;
+    } | null>;
+    create(dto: CreateMeasurementDto): Promise<BodyMeasurementDocument>;
+    update(id: string, dto: CreateMeasurementDto): Promise<BodyMeasurementDocument>;
+    remove(id: string): Promise<void>;
+}

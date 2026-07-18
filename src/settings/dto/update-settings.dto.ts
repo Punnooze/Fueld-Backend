@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateSettingsDto {
   @IsOptional()
@@ -25,4 +25,22 @@ export class UpdateSettingsDto {
   @IsNumber()
   @Min(0)
   height?: number;
+
+  @IsOptional()
+  @IsString()
+  characterName?: string;
+
+  @IsOptional()
+  @IsString()
+  hevyApiKey?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  stepTarget?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sleepTarget?: number;
 }

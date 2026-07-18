@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { QuestsService } from '../quests/quests.service';
 import { CreateLogDto } from './dto/create-log.dto';
 import { LogEntry, LogEntryDocument } from './schemas/log-entry.schema';
 
@@ -8,6 +9,7 @@ import { LogEntry, LogEntryDocument } from './schemas/log-entry.schema';
 export class LogsService {
   constructor(
     @InjectModel(LogEntry.name) private logModel: Model<LogEntryDocument>,
+    private readonly questsService: QuestsService,
   ) {}
 
   findByDate(date: string): Promise<LogEntryDocument[]> {
@@ -60,14 +62,16 @@ export class LogsService {
     return grouped;
   }
 
-  create(dto: CreateLogDto): Promise<LogEntryDocument> {
-    return this.logModel.create({
+  async create(dto: CreateLogDto) {
+    const entry = await this.logModel.create({
       foodItemId: new Types.ObjectId(dto.foodItemId),
       quantity: dto.quantity,
       date: dto.date,
       note: dto.note,
       loggedAt: new Date(),
     });
+    const completedQuests = await this.questsService.evaluate();
+    return { entry, completedQuests };
   }
 
   async remove(id: string): Promise<void> {

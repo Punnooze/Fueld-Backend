@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { QuestsService } from '../quests/quests.service';
 import { SettingsService } from '../settings/settings.service';
+import { XP } from '../xp/xp.constants';
+import { XpService } from '../xp/xp.service';
 import { CreateWeightDto } from './dto/create-weight.dto';
 import { WeightLog, WeightLogDocument } from './schemas/weight-log.schema';
 
@@ -10,6 +13,8 @@ export class WeightService {
   constructor(
     @InjectModel(WeightLog.name) private weightModel: Model<WeightLogDocument>,
     private readonly settingsService: SettingsService,
+    private readonly xpService: XpService,
+    private readonly questsService: QuestsService,
   ) {}
 
   private computeBmi(weight: number, height: number | undefined): number | null {
@@ -33,8 +38,14 @@ export class WeightService {
     return { ...entry.toObject(), bmi: this.computeBmi(entry.weight, height) };
   }
 
-  create(dto: CreateWeightDto): Promise<WeightLogDocument> {
-    return this.weightModel.create({ ...dto, loggedAt: new Date() });
+  async create(dto: CreateWeightDto) {
+    const entry = await this.weightModel.create({
+      ...dto,
+      loggedAt: new Date(),
+    });
+    await this.xpService.award('weight', XP.WEIGHT, 'Logged weight', dto.date);
+    const completedQuests = await this.questsService.evaluate();
+    return { entry, completedQuests };
   }
 
   async remove(id: string): Promise<void> {

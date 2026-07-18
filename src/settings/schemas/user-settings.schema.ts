@@ -19,6 +19,33 @@ export class UserSettings {
 
   @Prop()
   height!: number;
+
+  @Prop({ default: 'FIGHTER' })
+  characterName!: string;
+
+  @Prop()
+  hevyApiKey?: string;
+
+  @Prop()
+  googleRefreshToken?: string;
+
+  @Prop({ type: Object })
+  pushSubscription?: Record<string, unknown>; // Web Push subscription object
+
+  @Prop({ default: false })
+  googleHealthConnected!: boolean;
+
+  @Prop()
+  fitbitRefreshToken?: string;
+
+  @Prop({ default: false })
+  fitbitConnected!: boolean;
+
+  @Prop({ default: 10000 })
+  stepTarget!: number;
+
+  @Prop({ default: 8 })
+  sleepTarget!: number;
 }
 
 export const UserSettingsSchema = SchemaFactory.createForClass(UserSettings);

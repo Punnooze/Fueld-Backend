@@ -23,4 +23,34 @@ export class SettingsService {
       .exec();
     return result!;
   }
+
+  async setGoogleTokens(refreshToken: string): Promise<void> {
+    await this.settingsModel
+      .findOneAndUpdate(
+        {},
+        { $set: { googleRefreshToken: refreshToken, googleHealthConnected: true } },
+        { upsert: true },
+      )
+      .exec();
+  }
+
+  async getGoogleRefreshToken(): Promise<string | undefined> {
+    const s = await this.settingsModel.findOne().exec();
+    return s?.googleRefreshToken;
+  }
+
+  async setFitbitTokens(refreshToken: string): Promise<void> {
+    await this.settingsModel
+      .findOneAndUpdate(
+        {},
+        { $set: { fitbitRefreshToken: refreshToken, fitbitConnected: true } },
+        { upsert: true },
+      )
+      .exec();
+  }
+
+  async getFitbitRefreshToken(): Promise<string | undefined> {
+    const s = await this.settingsModel.findOne().exec();
+    return s?.fitbitRefreshToken;
+  }
 }

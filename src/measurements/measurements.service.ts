@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { QuestsService } from '../quests/quests.service';
 import { SettingsService } from '../settings/settings.service';
+import { XP } from '../xp/xp.constants';
+import { XpService } from '../xp/xp.service';
 import { CreateMeasurementDto } from './dto/create-measurement.dto';
 import { BodyMeasurement, BodyMeasurementDocument } from './schemas/body-measurement.schema';
 
@@ -11,6 +14,8 @@ export class MeasurementsService {
     @InjectModel(BodyMeasurement.name)
     private measurementModel: Model<BodyMeasurementDocument>,
     private readonly settingsService: SettingsService,
+    private readonly xpService: XpService,
+    private readonly questsService: QuestsService,
   ) {}
 
   // US Navy method (men): 495 / (1.0324 - 0.19077*log10(waist-neck) + 0.15456*log10(height)) - 450
@@ -44,8 +49,38 @@ export class MeasurementsService {
     };
   }
 
-  create(dto: CreateMeasurementDto): Promise<BodyMeasurementDocument> {
-    return this.measurementModel.create({ ...dto, loggedAt: new Date() });
+  async create(dto: CreateMeasurementDto) {
+    // waist improvement vs most recent prior entry
+    let waistImproved = false;
+    if (dto.waist != null) {
+      const prev = await this.measurementModel
+        .findOne({ waist: { $ne: null } })
+        .sort({ date: -1 })
+        .exec();
+      if (prev?.waist != null && dto.waist < prev.waist) waistImproved = true;
+    }
+
+    const entry = await this.measurementModel.create({
+      ...dto,
+      loggedAt: new Date(),
+    });
+
+    await this.xpService.award(
+      'measurements',
+      XP.MEASUREMENTS,
+      'Logged body measurements',
+      dto.date,
+    );
+    if (waistImproved)
+      await this.xpService.award(
+        'waist_improvement',
+        XP.WAIST_IMPROVEMENT,
+        'Waist measurement improved',
+        dto.date,
+      );
+
+    const completedQuests = await this.questsService.evaluate();
+    return { entry, completedQuests };
   }
 
   async update(id: string, dto: CreateMeasurementDto): Promise<BodyMeasurementDocument> {

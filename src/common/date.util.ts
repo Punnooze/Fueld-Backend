@@ -51,6 +51,37 @@ export function currentStreak(activeDates: Set<string>): number {
   return streak;
 }
 
+/**
+ * Rest-tolerant streak. A day is "maintained" if active, OR it's a Sunday
+ * (gym closed = free), OR it's the single allowed non-Sunday rest in a trailing
+ * 7-day window. A 2nd non-Sunday rest inside 7 days breaks it. Today counts as
+ * pending (its inactivity won't break the streak until the day passes).
+ */
+export function restTolerantStreak(activeDates: Set<string>): number {
+  const d = new Date();
+  if (!activeDates.has(toDateStr(d))) d.setUTCDate(d.getUTCDate() - 1); // today pending
+  let streak = 0;
+  const window: boolean[] = []; // recent-first: was this a non-Sunday rest?
+  for (let i = 0; i < 400; i++) {
+    const ds = toDateStr(d);
+    const isSunday = d.getUTCDay() === 0;
+    const active = activeDates.has(ds);
+    if (active) {
+      window.unshift(false);
+    } else if (isSunday) {
+      window.unshift(false); // free day, maintains
+    } else {
+      const restsInWeek = window.slice(0, 6).filter(Boolean).length + 1;
+      if (restsInWeek > 1) break; // 2nd non-Sunday rest within 7 days → broken
+      window.unshift(true);
+    }
+    streak++;
+    if (window.length > 7) window.pop();
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return streak;
+}
+
 /** Longest streak anywhere in the set (for personal best). */
 export function longestStreak(activeDates: Set<string>): number {
   const sorted = [...activeDates].sort();

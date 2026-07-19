@@ -37,6 +37,12 @@ export class WorkoutSession {
 
   @Prop({ type: [String], default: [] })
   prs: string[]; // exercises where a PR was hit
+
+  @Prop({ type: [{ title: String, weight: Number }], default: [] })
+  exerciseTops: { title: string; weight: number }[]; // top weight per exercise (for analysis)
+
+  @Prop({ default: 0 })
+  setsCount: number;
 }
 
 export const WorkoutSessionSchema =

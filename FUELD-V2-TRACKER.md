@@ -110,6 +110,15 @@ VAPID_EMAIL=            # phase 9
 - Quest XP dedup relies on `quest.completed` flag, not XP-event dedup (quests are unique per period).
 - No `userId` anywhere — deliberate, single-user app.
 
+## ⚠️ TEMP CODE — REMOVE BEFORE SHIP
+- **Frontend `hooks/useCharacter.ts`** — `PREVIEW_TIER` (forces a rank for preview). Set to `null`.
+- **Frontend `components/TodayTraining.tsx`** — `PREVIEW_DATE` (forces a day). Set to `null`.
+- **Frontend `App.tsx` + `pages/Variants.tsx`** — `/variants` dev showcase route + page. Remove.
+- **Frontend `vite.config.ts`** — `server.allowedHosts: ['.ngrok-free.app']` (dev tunnel only).
+- **Frontend `api/client.ts`** — `ngrok-skip-browser-warning` header (inert; drop when done tunneling).
+- **Backend `health.controller.ts`** — `GET /health/raw` debug endpoint. Remove.
+- **Dormant/unused**: Fitbit module (backend), `SyncBar`, `HealthChips`, `FighterCard`, `BodySVG` (frontend) — delete if not revived.
+
 ## LOG
 - 2026-07-18: Tracker created. Read spec + codebase.
 - 2026-07-18: Phases 1–7 (backend foundation) DONE. New: xp, workouts, quests, character modules; UserSettings extended; XP awarding + quest eval wired into logs/weight/measurements mutations. Build passes, DI + all endpoints verified against live Atlas DB. Level formula off-by-one fixed + unit-tested.

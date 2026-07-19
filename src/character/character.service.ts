@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
-  currentStreak,
+  restTolerantStreak,
   lastNDates,
   longestStreak,
+  weekMonday,
 } from '../common/date.util';
 import { LogEntry, LogEntryDocument } from '../logs/schemas/log-entry.schema';
 import {
@@ -53,14 +54,15 @@ export class CharacterService {
     const floor = xpThreshold(level - 1);
     const next = xpThreshold(level);
 
-    // active dates over the last year → streaks + decay
+    // active dates over the last year → streaks + decay (gym, food log, cardio)
     const year = lastNDates(365);
-    const [logDates, workoutDates] = await Promise.all([
+    const [logDates, workoutDates, cardioDates] = await Promise.all([
       this.logModel.distinct('date', { date: { $in: year } }).exec(),
       this.workoutModel.distinct('date', { date: { $in: year } }).exec(),
+      this.xpService.datesForType('cardio'),
     ]);
-    const active = new Set([...logDates, ...workoutDates] as string[]);
-    const streak = currentStreak(active);
+    const active = new Set([...logDates, ...workoutDates, ...cardioDates] as string[]);
+    const streak = restTolerantStreak(active);
     const best = longestStreak(active);
 
     // decay: days since last active day
@@ -118,6 +120,70 @@ export class CharacterService {
         workoutsThisMonth: gymCount,
         nutritionDaysThisMonth: (nutritionDays as string[]).length,
       },
+    };
+  }
+
+  /** Personal records across every category. */
+  async records() {
+    const workouts = await this.workoutModel.find().exec();
+
+    let heaviest = { title: '', weight: 0, date: '' };
+    let biggest = { type: '', volume: 0, date: '' };
+    let totalVolume = 0;
+    const weekSessions = new Map<string, Set<string>>();
+
+    for (const w of workouts) {
+      totalVolume += w.totalVolume ?? 0;
+      if ((w.totalVolume ?? 0) > biggest.volume)
+        biggest = { type: w.type, volume: w.totalVolume ?? 0, date: w.date };
+      for (const et of w.exerciseTops ?? []) {
+        if (et.weight > heaviest.weight)
+          heaviest = { title: et.title, weight: et.weight, date: w.date };
+      }
+      const mon = weekMonday(new Date(w.date));
+      if (!weekSessions.has(mon)) weekSessions.set(mon, new Set());
+      weekSessions.get(mon)!.add(w.date);
+    }
+    const bestWeek = Math.max(0, ...[...weekSessions.values()].map((s) => s.size));
+
+    // best protein day (logs × food macros)
+    const proteinRows = await this.logModel
+      .aggregate<{ _id: string; protein: number }>([
+        { $lookup: { from: 'fooditems', localField: 'foodItemId', foreignField: '_id', as: 'food' } },
+        { $unwind: '$food' },
+        { $group: { _id: '$date', protein: { $sum: { $multiply: ['$food.protein', '$quantity'] } } } },
+        { $sort: { protein: -1 } },
+        { $limit: 1 },
+      ])
+      .exec();
+    const bestProtein = proteinRows[0]
+      ? { grams: Math.round(proteinRows[0].protein), date: proteinRows[0]._id }
+      : null;
+
+    // longest streak across all activity
+    const year = lastNDates(365);
+    const [logDates, workoutDates, cardioDates] = await Promise.all([
+      this.logModel.distinct('date', { date: { $in: year } }).exec(),
+      this.workoutModel.distinct('date', { date: { $in: year } }).exec(),
+      this.xpService.datesForType('cardio'),
+    ]);
+    const bestStreak = longestStreak(
+      new Set([...logDates, ...workoutDates, ...cardioDates] as string[]),
+    );
+
+    // best cardio (AZM ≈ xp/2, capped earlier)
+    const cardioMax = await this.xpService.maxByType('cardio');
+    const bestCardio = cardioMax ? { azm: cardioMax.xp / 2, date: cardioMax.date } : null;
+
+    return {
+      heaviestLift: heaviest.weight > 0 ? heaviest : null,
+      biggestSession: biggest.volume > 0 ? biggest : null,
+      bestProteinDay: bestProtein,
+      bestCardio,
+      longestStreak: bestStreak,
+      bestWeek,
+      totalSessions: workouts.length,
+      totalVolume: Math.round(totalVolume),
     };
   }
 }

@@ -11,7 +11,14 @@ export const XP = {
   STREAK_30: 1000,
   PROTEIN_STREAK_10: 150,
   WAIST_IMPROVEMENT: 200,
-} as const;
+  STEPS_BONUS: 30, // 10k+ steps
+  WEEKLY_DISCIPLINED: 250, // ≤1 rest + 4+ active days in a week
+} as const
+
+// Cardio XP scales with Active Zone Minutes (capped).
+export function cardioXp(azm: number): number {
+  return Math.min(Math.round(azm * 2), 120);
+};
 
 // Hevy session volume multipliers (kg total lifted)
 export function volumeMultiplier(totalVolume: number): number {
@@ -31,4 +38,7 @@ export const DAILY_ONCE_TYPES = new Set([
   'streak_30',
   'protein_streak_10',
   'waist_improvement',
+  'cardio',
+  'steps_bonus',
+  'weekly_disciplined',
 ]);

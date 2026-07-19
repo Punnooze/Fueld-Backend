@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { PushService } from '../push/push.service';
 import { QuestsService } from '../quests/quests.service';
 import { SettingsService } from '../settings/settings.service';
 import { XP } from '../xp/xp.constants';
@@ -44,6 +45,7 @@ export class HevyService {
     private readonly workoutsService: WorkoutsService,
     private readonly xpService: XpService,
     private readonly questsService: QuestsService,
+    private readonly pushService: PushService,
   ) {}
 
   private intensityFor(volume: number): string {
@@ -88,7 +90,18 @@ export class HevyService {
     const key = settings.hevyApiKey;
     if (!key) throw new BadRequestException('No Hevy API key set in settings');
 
-    const workouts = await this.fetchWorkouts(key);
+    // incremental: only pull since the last saved session (first sync = 120d)
+    const last = await this.workoutModel
+      .findOne({ hevyWorkoutId: { $exists: true, $ne: null } })
+      .sort({ date: -1 })
+      .exec();
+    let days = 120;
+    if (last?.date) {
+      const gap = Math.ceil((Date.now() - new Date(last.date).getTime()) / 86400000);
+      days = Math.min(Math.max(gap + 1, 1), 120);
+    }
+
+    const workouts = await this.fetchWorkouts(key, days, 20);
     // oldest first so PR running-max builds correctly
     workouts.sort(
       (a, b) =>
@@ -130,7 +143,22 @@ export class HevyService {
         if (best > (prev ?? 0)) maxByExercise.set(ex.title, best);
       }
 
-      if (existing.has(w.id)) continue; // dedup
+      const exerciseTops = w.exercises.map((ex) => ({
+        title: ex.title,
+        weight: ex.sets.reduce((m, s) => Math.max(m, s.weight_kg ?? 0), 0),
+      }));
+      const setsCount = w.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+
+      if (existing.has(w.id)) {
+        // backfill analysis fields on already-imported sessions (no XP re-award)
+        await this.workoutModel
+          .updateOne(
+            { hevyWorkoutId: w.id },
+            { $set: { exerciseTops, setsCount } },
+          )
+          .exec();
+        continue;
+      }
 
       const intensity = this.intensityFor(volume);
       const date = w.start_time.slice(0, 10);
@@ -155,6 +183,8 @@ export class HevyService {
         totalVolume: Math.round(volume),
         exercises: w.exercises.map((e) => e.title),
         prs,
+        exerciseTops,
+        setsCount,
       });
 
       await this.xpService.award('gym_session', xp, `${w.title} (Hevy)`, date);
@@ -167,24 +197,25 @@ export class HevyService {
     }
 
     const completedQuests = await this.questsService.evaluate();
+    if (newPRs.length)
+      await this.pushService.notify(
+        'NEW PR',
+        `${newPRs[0]}. +${XP.PR} XP. IRON doesn't slow down.`,
+        '/gym',
+      );
     return { synced, xpEarned, newPRs, completedQuests };
   }
 
-  /** Read-only analysis pulled straight from Hevy (no DB writes). */
+  /** Read-only analysis computed from stored sessions (no Hevy call). */
   async stats(days = 90) {
-    const settings = await this.settingsService.getSettings();
-    const key = settings.hevyApiKey;
-    if (!key) throw new BadRequestException('No Hevy API key set in settings');
-
-    const workouts = await this.fetchWorkouts(key, days, 20);
-    workouts.sort(
-      (a, b) =>
-        new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
-    );
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const sessions = await this.workoutModel
+      .find({ date: { $gte: cutoff } })
+      .sort({ date: 1, loggedAt: 1 })
+      .exec();
 
     interface Rec {
       sessions: number;
-      sets: number;
       history: { date: string; weight: number }[];
       max: number;
     }
@@ -193,35 +224,18 @@ export class HevyService {
     let totalSets = 0;
     const heaviest = { title: '', weight: 0 };
 
-    for (const w of workouts) {
-      const seen = new Set<string>();
-      for (const ex of w.exercises) {
-        const top = ex.sets.reduce((m, s) => Math.max(m, s.weight_kg ?? 0), 0);
-        const vol = ex.sets.reduce(
-          (s, set) => s + (set.weight_kg ?? 0) * (set.reps ?? 0),
-          0,
-        );
-        totalVolume += vol;
-        totalSets += ex.sets.length;
-
-        const rec: Rec = perEx.get(ex.title) ?? {
-          sessions: 0,
-          sets: 0,
-          history: [],
-          max: 0,
-        };
-        rec.sets += ex.sets.length;
-        if (!seen.has(ex.title)) {
-          rec.sessions++;
-          seen.add(ex.title);
-        }
-        rec.history.push({ date: w.start_time.slice(0, 10), weight: top });
-        rec.max = Math.max(rec.max, top);
-        perEx.set(ex.title, rec);
-
-        if (top > heaviest.weight) {
-          heaviest.title = ex.title;
-          heaviest.weight = top;
+    for (const w of sessions) {
+      totalVolume += w.totalVolume ?? 0;
+      totalSets += w.setsCount ?? 0;
+      for (const et of w.exerciseTops ?? []) {
+        const rec: Rec = perEx.get(et.title) ?? { sessions: 0, history: [], max: 0 };
+        rec.sessions++;
+        rec.history.push({ date: w.date, weight: et.weight });
+        rec.max = Math.max(rec.max, et.weight);
+        perEx.set(et.title, rec);
+        if (et.weight > heaviest.weight) {
+          heaviest.title = et.title;
+          heaviest.weight = et.weight;
         }
       }
     }
@@ -230,7 +244,7 @@ export class HevyService {
       .map(([title, r]) => ({
         title,
         sessions: r.sessions,
-        sets: r.sets,
+        sets: 0,
         currentWeight: r.history[r.history.length - 1]?.weight ?? 0,
         maxWeight: r.max,
         lastDate: r.history[r.history.length - 1]?.date ?? '',
@@ -240,7 +254,7 @@ export class HevyService {
 
     return {
       days,
-      totalSessions: workouts.length,
+      totalSessions: sessions.length,
       totalVolume: Math.round(totalVolume),
       totalSets,
       heaviest,

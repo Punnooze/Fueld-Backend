@@ -4,6 +4,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SettingsService } from '../settings/settings.service';
 import { WeightLog, WeightLogDocument } from '../weight/schemas/weight-log.schema';
+import { XpService } from '../xp/xp.service';
+import { XP, cardioXp } from '../xp/xp.constants';
 
 // Google Health API v4 (health.googleapis.com) — the Fitbit-successor API.
 const SCOPES = [
@@ -18,6 +20,7 @@ export class HealthService {
   constructor(
     private readonly config: ConfigService,
     private readonly settingsService: SettingsService,
+    private readonly xpService: XpService,
     @InjectModel(WeightLog.name) private weightModel: Model<WeightLogDocument>,
   ) {}
 
@@ -124,20 +127,34 @@ export class HealthService {
     return null;
   }
 
-  async today() {
+  async today(localDate?: string) {
     const token = await this.accessToken();
-    const now = new Date();
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    // use the caller's local civil date so steps match the device's day (tz-safe)
+    const dateStr = localDate ?? new Date().toISOString().slice(0, 10);
+    const start = new Date(`${dateStr}T12:00:00Z`); // noon anchor avoids tz rollover
     const end = new Date(start.getTime() + 86400000);
-    const dateStr = start.toISOString().slice(0, 10);
 
-    const [stepsAgg, rhr, hrv, sleep, weight] = await Promise.all([
+    const [stepsAgg, rhr, hrv, sleep, weight, azmResp] = await Promise.all([
       this.dailyRollUp(token, 'steps', start, end),
       this.list(token, 'daily-resting-heart-rate'),
       this.list(token, 'daily-heart-rate-variability'),
       this.list(token, 'sleep'),
       this.list(token, 'weight'),
+      this.list(token, 'active-zone-minutes'),
     ]);
+
+    const cdStr = (cd: any) =>
+      cd ? `${cd.year}-${String(cd.month).padStart(2, '0')}-${String(cd.day).padStart(2, '0')}` : '';
+
+    // Active Zone Minutes for the day = cardio effort (zone-weighted)
+    let activeZoneMinutes = 0;
+    let cardioMinutes = 0;
+    for (const p of azmResp?.dataPoints ?? []) {
+      const a = p?.activeZoneMinutes;
+      if (cdStr(a?.interval?.civilStartTime?.date) !== dateStr) continue;
+      activeZoneMinutes += Number(a.activeZoneMinutes ?? 0);
+      cardioMinutes += 1;
+    }
 
     const steps = this.findNum(stepsAgg, ['countsum', 'count', 'steps']);
     const restingHeartRate = this.findNum(rhr, ['beatsperminute', 'beats', 'bpm', 'resting']);
@@ -146,15 +163,27 @@ export class HealthService {
     const weightG = this.findNum(weight, ['kilogram', 'gram', 'weight']);
     const weightKg = weightG != null ? Math.round((weightG / 1000) * 10) / 10 : null;
 
-    // auto-log weight into our DB once per day (no double entry)
+    // log weight only when it actually changed vs the latest entry (to 0.1kg)
     if (weightKg != null) {
-      await this.weightModel
-        .updateOne(
-          { date: dateStr },
-          { $setOnInsert: { weight: weightKg, date: dateStr, loggedAt: new Date() } },
-          { upsert: true },
-        )
-        .exec();
+      const last = await this.weightModel.findOne().sort({ date: -1, loggedAt: -1 }).exec();
+      const changed = !last || Math.round(last.weight * 10) !== Math.round(weightKg * 10);
+      if (changed) {
+        await this.weightModel.create({ weight: weightKg, date: dateStr, loggedAt: new Date() });
+      }
+    }
+
+    // cardio day + XP (once/day) — records the cardio day for streak/history too
+    if (activeZoneMinutes >= 20) {
+      await this.xpService.award(
+        'cardio',
+        cardioXp(activeZoneMinutes),
+        `Cardio · ${cardioMinutes} active min`,
+        dateStr,
+      );
+    }
+    // 10k steps bonus (once/day)
+    if (steps != null && steps >= 10000) {
+      await this.xpService.award('steps_bonus', XP.STEPS_BONUS, '10,000 steps', dateStr);
     }
 
     return {
@@ -163,6 +192,8 @@ export class HealthService {
       hrv: hrvVal != null ? Math.round(hrvVal) : null,
       sleepHours,
       weightKg,
+      activeZoneMinutes: activeZoneMinutes || null,
+      cardioMinutes: cardioMinutes || null,
     };
   }
 

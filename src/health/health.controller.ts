@@ -33,8 +33,8 @@ export class HealthController {
   }
 
   @Get('today')
-  today() {
-    return this.healthService.today();
+  today(@Query('date') date?: string) {
+    return this.healthService.today(date);
   }
 
   @Get('raw')

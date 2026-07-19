@@ -9,4 +9,9 @@ export class CharacterController {
   getCharacter() {
     return this.characterService.getCharacter();
   }
+
+  @Get('records')
+  records() {
+    return this.characterService.records();
+  }
 }

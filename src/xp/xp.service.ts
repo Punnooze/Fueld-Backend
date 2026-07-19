@@ -45,4 +45,19 @@ export class XpService {
   recent(limit = 20): Promise<XPEventDocument[]> {
     return this.xpModel.find().sort({ loggedAt: -1 }).limit(limit).exec();
   }
+
+  /** Distinct dates that have an XP event of the given type. */
+  datesForType(type: string): Promise<string[]> {
+    return this.xpModel.distinct('date', { type }).exec() as Promise<string[]>;
+  }
+
+  /** Highest-XP event of a type (for personal records). */
+  async maxByType(type: string): Promise<{ xp: number; date: string } | null> {
+    const e = await this.xpModel.findOne({ type }).sort({ xp: -1 }).exec();
+    return e ? { xp: e.xp, date: e.date } : null;
+  }
+
+  async existsForType(type: string, date: string): Promise<boolean> {
+    return !!(await this.xpModel.exists({ type, date }));
+  }
 }

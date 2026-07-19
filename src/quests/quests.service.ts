@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
-  currentStreak,
+  restTolerantStreak,
   lastNDates,
   today,
   weekDates,
@@ -86,11 +86,12 @@ export class QuestsService {
   }
 
   private async activeDates(sinceDates: string[]): Promise<Set<string>> {
-    const [logDates, workoutDates] = await Promise.all([
+    const [logDates, workoutDates, cardioDates] = await Promise.all([
       this.logModel.distinct('date', { date: { $in: sinceDates } }).exec(),
       this.workoutModel.distinct('date', { date: { $in: sinceDates } }).exec(),
+      this.xpService.datesForType('cardio'),
     ]);
-    return new Set([...logDates, ...workoutDates] as string[]);
+    return new Set([...logDates, ...workoutDates, ...cardioDates] as string[]);
   }
 
   /** Ensure a quest doc exists for the current period of every definition. */
@@ -153,7 +154,7 @@ export class QuestsService {
           .countDocuments({ date: { $in: weekDates(weekMonday()) } })
           .exec();
       case 'the_logged':
-        return currentStreak(await this.activeDates(lastNDates(365)));
+        return restTolerantStreak(await this.activeDates(lastNDates(365)));
       case 'shrink_the_core': {
         const rows = await this.measurementModel
           .find({ date: { $in: lastNDates(30) }, waist: { $ne: null } })
@@ -205,7 +206,7 @@ export class QuestsService {
   /** Streak milestone bonuses (fire once on the day the milestone is reached). */
   private async awardStreakBonuses(): Promise<void> {
     const active = await this.activeDates(lastNDates(60));
-    const streak = currentStreak(active);
+    const streak = restTolerantStreak(active);
     if (streak === 7)
       await this.xpService.award(
         'streak_7',
@@ -234,6 +235,21 @@ export class QuestsService {
         XP.PROTEIN_STREAK_10,
         '10-day protein streak',
         today(),
+      );
+
+    // disciplined week: ≥4 active days & ≤1 non-Sunday rest (once per week)
+    const wk = weekDates(weekMonday());
+    const past = wk.filter((d) => d <= today());
+    const activeThisWeek = past.filter((d) => active.has(d)).length;
+    const rests = past.filter(
+      (d) => new Date(d).getUTCDay() !== 0 && !active.has(d),
+    ).length;
+    if (activeThisWeek >= 4 && rests <= 1)
+      await this.xpService.award(
+        'weekly_disciplined',
+        XP.WEEKLY_DISCIPLINED,
+        'Disciplined week — ≤1 rest',
+        weekMonday(),
       );
   }
 

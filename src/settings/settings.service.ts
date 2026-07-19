@@ -53,4 +53,15 @@ export class SettingsService {
     const s = await this.settingsModel.findOne().exec();
     return s?.fitbitRefreshToken;
   }
+
+  async setPushSubscription(sub: Record<string, unknown>): Promise<void> {
+    await this.settingsModel
+      .findOneAndUpdate({}, { $set: { pushSubscription: sub } }, { upsert: true })
+      .exec();
+  }
+
+  async getPushSubscription(): Promise<Record<string, unknown> | undefined> {
+    const s = await this.settingsModel.findOne().exec();
+    return s?.pushSubscription;
+  }
 }

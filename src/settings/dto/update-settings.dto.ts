@@ -43,4 +43,9 @@ export class UpdateSettingsDto {
   @IsNumber()
   @Min(0)
   sleepTarget?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  goalWeight?: number;
 }

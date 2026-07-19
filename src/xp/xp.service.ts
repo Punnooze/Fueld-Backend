@@ -60,4 +60,9 @@ export class XpService {
   async existsForType(type: string, date: string): Promise<boolean> {
     return !!(await this.xpModel.exists({ type, date }));
   }
+
+  /** Count of events of a given type (across all dates). */
+  countByType(type: string): Promise<number> {
+    return this.xpModel.countDocuments({ type }).exec();
+  }
 }

@@ -13,6 +13,8 @@ export const XP = {
   WAIST_IMPROVEMENT: 200,
   STEPS_BONUS: 30, // 10k+ steps
   WEEKLY_DISCIPLINED: 250, // ≤1 rest + 4+ active days in a week
+  WEIGHT_MILESTONE: 150, // per kg of progress toward goal weight (banked)
+  GOAL_REACHED: 1000, // one-time bonus for hitting goal weight
 } as const
 
 // Cardio XP scales with Active Zone Minutes (capped).

@@ -11,6 +11,11 @@ export class WeightController {
     return this.weightService.findLatest();
   }
 
+  @Get('journey')
+  journey() {
+    return this.weightService.journey();
+  }
+
   @Get()
   findInRange(
     @Query('startDate') startDate: string,

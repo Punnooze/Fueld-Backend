@@ -46,6 +46,9 @@ export class UserSettings {
 
   @Prop({ default: 8 })
   sleepTarget!: number;
+
+  @Prop()
+  goalWeight?: number; // target weight (kg) for the gamified journey
 }
 
 export const UserSettingsSchema = SchemaFactory.createForClass(UserSettings);

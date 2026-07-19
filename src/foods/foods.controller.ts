@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { CreateFoodDto } from './dto/create-food.dto';
 import { FoodsService } from './foods.service';
 
@@ -14,6 +14,11 @@ export class FoodsController {
   @Post()
   create(@Body() dto: CreateFoodDto) {
     return this.foodsService.create(dto);
+  }
+
+  @Put(':id')
+  update(@Param('id') id: string, @Body() dto: CreateFoodDto) {
+    return this.foodsService.update(id, dto);
   }
 
   @Delete(':id')

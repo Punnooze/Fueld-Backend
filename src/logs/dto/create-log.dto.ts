@@ -22,4 +22,8 @@ export class CreateLogDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  meal?: string; // breakfast | lunch | dinner | other
 }

@@ -68,6 +68,7 @@ export class LogsService {
       quantity: dto.quantity,
       date: dto.date,
       note: dto.note,
+      meal: dto.meal ?? 'other',
       loggedAt: new Date(),
     });
     const completedQuests = await this.questsService.evaluate();

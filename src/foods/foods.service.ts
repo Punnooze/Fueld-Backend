@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CreateFoodDto } from './dto/create-food.dto';
@@ -22,11 +18,17 @@ export class FoodsService {
     return this.foodModel.create({ ...dto, isCustom: true });
   }
 
+  async update(id: string, dto: CreateFoodDto): Promise<FoodItemDocument> {
+    const item = await this.foodModel
+      .findByIdAndUpdate(id, { $set: dto }, { new: true })
+      .exec();
+    if (!item) throw new NotFoundException('Food item not found');
+    return item;
+  }
+
   async remove(id: string): Promise<void> {
     const item = await this.foodModel.findById(id).exec();
     if (!item) throw new NotFoundException('Food item not found');
-    if (!item.isCustom)
-      throw new BadRequestException('Cannot delete preloaded food items');
     await item.deleteOne();
   }
 }

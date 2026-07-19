@@ -15,6 +15,9 @@ export class LogEntry {
   @Prop()
   note: string;
 
+  @Prop({ default: 'other' })
+  meal: string; // breakfast | lunch | dinner | other
+
   @Prop({ required: true })
   date: string;
 

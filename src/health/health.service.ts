@@ -159,7 +159,7 @@ export class HealthService {
     const steps = this.findNum(stepsAgg, ['countsum', 'count', 'steps']);
     const restingHeartRate = this.findNum(rhr, ['beatsperminute', 'beats', 'bpm', 'resting']);
     const hrvVal = this.findNum(hrv, ['rmssd', 'variability', 'millis', 'hrv']);
-    const sleepHours = this.sleepHours(sleep);
+    const sleepHours = this.sleepHours(sleep, dateStr);
     const weightG = this.findNum(weight, ['kilogram', 'gram', 'weight']);
     const weightKg = weightG != null ? Math.round((weightG / 1000) * 10) / 10 : null;
 
@@ -197,12 +197,16 @@ export class HealthService {
     };
   }
 
-  /** Latest night's asleep hours from a sleep list response (excludes AWAKE stages). */
-  private sleepHours(resp: any): number | null {
+  /** Asleep hours for the night you woke on `dateStr` (excludes AWAKE stages). */
+  private sleepHours(resp: any, dateStr: string): number | null {
     const pts = resp?.dataPoints;
     if (!Array.isArray(pts) || !pts.length) return null;
-    // most recent session by interval start
-    const latest = [...pts].sort((a, b) =>
+    // only sessions that ENDED (woke up) on the requested date — not a stale latest
+    const nights = pts.filter(
+      (p: any) => String(p?.sleep?.interval?.endTime ?? '').slice(0, 10) === dateStr,
+    );
+    if (!nights.length) return null;
+    const latest = nights.sort((a, b) =>
       String(b?.sleep?.interval?.startTime ?? '').localeCompare(
         String(a?.sleep?.interval?.startTime ?? ''),
       ),

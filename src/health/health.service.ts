@@ -134,14 +134,16 @@ export class HealthService {
     const start = new Date(`${dateStr}T12:00:00Z`); // noon anchor avoids tz rollover
     const end = new Date(start.getTime() + 86400000);
 
-    const [stepsAgg, rhr, hrv, sleep, weight, azmResp] = await Promise.all([
-      this.dailyRollUp(token, 'steps', start, end),
-      this.list(token, 'daily-resting-heart-rate'),
-      this.list(token, 'daily-heart-rate-variability'),
-      this.list(token, 'sleep'),
-      this.list(token, 'weight'),
-      this.list(token, 'active-zone-minutes'),
-    ]);
+    const [stepsAgg, rhr, hrv, sleep, weight, azmResp, exerciseResp] =
+      await Promise.all([
+        this.dailyRollUp(token, 'steps', start, end),
+        this.list(token, 'daily-resting-heart-rate'),
+        this.list(token, 'daily-heart-rate-variability'),
+        this.list(token, 'sleep'),
+        this.list(token, 'weight'),
+        this.list(token, 'active-zone-minutes'),
+        this.list(token, 'exercise'),
+      ]);
 
     const cdStr = (cd: any) =>
       cd ? `${cd.year}-${String(cd.month).padStart(2, '0')}-${String(cd.day).padStart(2, '0')}` : '';
@@ -155,6 +157,47 @@ export class HealthService {
       activeZoneMinutes += Number(a.activeZoneMinutes ?? 0);
       cardioMinutes += 1;
     }
+
+    // Individual cardio/exercise sessions (walk, bike, sport…) for the day —
+    // shown distinctly instead of one merged "Cardio" block.
+    const offSec = (o?: string) => (o ? parseInt(o, 10) || 0 : 0);
+    const localDay = (iso?: string, off?: string) =>
+      iso
+        ? new Date(new Date(iso).getTime() + offSec(off) * 1000)
+            .toISOString()
+            .slice(0, 10)
+        : '';
+    const cardioSessions = (exerciseResp?.dataPoints ?? [])
+      .map((p: any) => p?.exercise)
+      .filter(
+        (e: any) =>
+          e?.interval &&
+          localDay(e.interval.startTime, e.interval.startUtcOffset) === dateStr,
+      )
+      .map((e: any) => {
+        const m = e.metricsSummary ?? {};
+        return {
+          type: e.exerciseType ?? 'WORKOUT',
+          name: e.displayName ?? e.exerciseType ?? 'Workout',
+          durationMin: e.activeDuration
+            ? Math.round(parseInt(e.activeDuration, 10) / 60)
+            : null,
+          calories: m.caloriesKcal ?? null,
+          distanceKm: m.distanceMillimeters
+            ? Math.round((Number(m.distanceMillimeters) / 1e6) * 100) / 100
+            : null,
+          avgHr: m.averageHeartRateBeatsPerMinute
+            ? Number(m.averageHeartRateBeatsPerMinute)
+            : null,
+          activeZoneMinutes: m.activeZoneMinutes
+            ? Number(m.activeZoneMinutes)
+            : null,
+          startTime: e.interval.startTime,
+        };
+      })
+      .sort((a: any, b: any) =>
+        String(a.startTime).localeCompare(String(b.startTime)),
+      );
 
     const steps = this.findNum(stepsAgg, ['countsum', 'count', 'steps']);
     const restingHeartRate = this.findNum(rhr, ['beatsperminute', 'beats', 'bpm', 'resting']);
@@ -194,6 +237,7 @@ export class HealthService {
       weightKg,
       activeZoneMinutes: activeZoneMinutes || null,
       cardioMinutes: cardioMinutes || null,
+      cardioSessions,
     };
   }
 
@@ -223,7 +267,8 @@ export class HealthService {
     } else {
       ms = dur(s.interval.startTime, s.interval.endTime);
     }
-    return ms > 0 ? Math.round((ms / 3600000) * 10) / 10 : null;
+    // 2 decimals ≈ minute precision (frontend renders as "7h 18m")
+    return ms > 0 ? Math.round((ms / 3600000) * 100) / 100 : null;
   }
 
   /** Debug: raw response for one data type, to verify field shapes. */

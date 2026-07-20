@@ -14,10 +14,17 @@ export class PushService {
   ) {
     const pub = config.get<string>('VAPID_PUBLIC_KEY');
     const priv = config.get<string>('VAPID_PRIVATE_KEY');
-    const email = config.get<string>('VAPID_EMAIL') ?? 'mailto:admin@fueld.app';
+    const raw = config.get<string>('VAPID_EMAIL') ?? 'admin@fueld.app';
+    // web-push requires a mailto:/https: subject — tolerate a bare email in env
+    const email = /^(mailto:|https?:)/.test(raw) ? raw : `mailto:${raw}`;
     if (pub && priv) {
-      webpush.setVapidDetails(email, pub, priv);
-      this.ready = true;
+      try {
+        webpush.setVapidDetails(email, pub, priv);
+        this.ready = true;
+      } catch (e) {
+        // never let a bad VAPID config crash app boot
+        this.log.error(`VAPID setup failed: ${(e as Error).message}`);
+      }
     }
   }
 

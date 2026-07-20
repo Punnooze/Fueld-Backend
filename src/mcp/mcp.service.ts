@@ -27,6 +27,14 @@ const ok = (data: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(data) }],
 });
 
+// Returned when a destructive/edit tool is called without confirm=true. Claude
+// must relay this to the user and only re-call after they agree.
+const needsConfirm = (action: string) =>
+  ok({
+    confirmationRequired: true,
+    message: `Ask the user to confirm they want to ${action}, then call again with confirm=true.`,
+  });
+
 @Injectable()
 export class McpService {
   createServer(): McpServer {
@@ -117,6 +125,62 @@ export class McpService {
           }
         }
         return ok({ date, totals, entries });
+      },
+    );
+
+    server.tool(
+      'update_food',
+      'Edit a saved food item\'s name and/or macros. Only call after the user explicitly says to update; pass confirm=true then. Provide only the fields being changed (macros are per serving).',
+      {
+        id: z.string(),
+        name: z.string().optional(),
+        calories: z.number().min(0).optional(),
+        protein: z.number().min(0).optional(),
+        carbs: z.number().min(0).optional(),
+        fat: z.number().min(0).optional(),
+        confirm: z.boolean().optional(),
+      },
+      async ({ id, confirm, ...fields }) => {
+        if (!confirm) return needsConfirm(`update the food "${id}"`);
+        return ok(await api('PUT', `/foods/${id}`, fields));
+      },
+    );
+
+    server.tool(
+      'update_log',
+      'Edit a logged meal entry (quantity, meal, note, date, or swap the food via foodItemId). Only call after the user explicitly says to update; pass confirm=true then. Provide only the fields being changed. Get the entry id from get_day.',
+      {
+        id: z.string(),
+        foodItemId: z.string().optional(),
+        quantity: z.number().min(0.1).optional(),
+        date: z.string().optional(),
+        meal: z.enum(['breakfast', 'lunch', 'dinner', 'other']).optional(),
+        note: z.string().optional(),
+        confirm: z.boolean().optional(),
+      },
+      async ({ id, confirm, ...fields }) => {
+        if (!confirm) return needsConfirm(`update the log entry "${id}"`);
+        return ok(await api('PUT', `/logs/${id}`, fields));
+      },
+    );
+
+    server.tool(
+      'delete_food',
+      'Delete a saved food item. Destructive — always ask the user to confirm first, then call with confirm=true.',
+      { id: z.string(), confirm: z.boolean().optional() },
+      async ({ id, confirm }) => {
+        if (!confirm) return needsConfirm(`delete the food "${id}"`);
+        return ok(await api('DELETE', `/foods/${id}`));
+      },
+    );
+
+    server.tool(
+      'delete_log',
+      'Delete a logged meal entry. Destructive — always ask the user to confirm first, then call with confirm=true. Get the entry id from get_day.',
+      { id: z.string(), confirm: z.boolean().optional() },
+      async ({ id, confirm }) => {
+        if (!confirm) return needsConfirm(`delete the log entry "${id}"`);
+        return ok(await api('DELETE', `/logs/${id}`));
       },
     );
 

@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { QuestsService } from '../quests/quests.service';
 import { CreateLogDto } from './dto/create-log.dto';
+import { UpdateLogDto } from './dto/update-log.dto';
 import { LogEntry, LogEntryDocument } from './schemas/log-entry.schema';
 
 @Injectable()
@@ -71,6 +72,18 @@ export class LogsService {
       meal: dto.meal ?? 'other',
       loggedAt: new Date(),
     });
+    const completedQuests = await this.questsService.evaluate();
+    return { entry, completedQuests };
+  }
+
+  async update(id: string, dto: UpdateLogDto) {
+    const update: Record<string, unknown> = { ...dto };
+    if (dto.foodItemId) update.foodItemId = new Types.ObjectId(dto.foodItemId);
+    const entry = await this.logModel
+      .findByIdAndUpdate(id, update, { new: true })
+      .populate('foodItemId')
+      .exec();
+    if (!entry) throw new NotFoundException('Log entry not found');
     const completedQuests = await this.questsService.evaluate();
     return { entry, completedQuests };
   }

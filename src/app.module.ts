@@ -8,6 +8,7 @@ import { FoodsModule } from './foods/foods.module';
 import { HealthModule } from './health/health.module';
 import { HevyModule } from './hevy/hevy.module';
 import { LogsModule } from './logs/logs.module';
+import { McpModule } from './mcp/mcp.module';
 import { PushModule } from './push/push.module';
 import { MeasurementsModule } from './measurements/measurements.module';
 import { QuestsModule } from './quests/quests.module';
@@ -29,6 +30,7 @@ import { XpModule } from './xp/xp.module';
     }),
     FoodsModule,
     LogsModule,
+    McpModule,
     SettingsModule,
     WeightModule,
     MeasurementsModule,

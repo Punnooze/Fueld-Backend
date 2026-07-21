@@ -37,6 +37,11 @@ export class HealthController {
     return this.healthService.today(date);
   }
 
+  @Get('burned')
+  burned(@Query('start') start: string, @Query('end') end: string) {
+    return this.healthService.burnedByDay(start, end);
+  }
+
   @Get('raw')
   raw(@Query('type') type: string) {
     return this.healthService.raw(type ?? 'steps');

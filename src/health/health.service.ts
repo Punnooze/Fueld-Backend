@@ -5,7 +5,7 @@ import { Model } from 'mongoose';
 import { SettingsService } from '../settings/settings.service';
 import { WeightLog, WeightLogDocument } from '../weight/schemas/weight-log.schema';
 import { XpService } from '../xp/xp.service';
-import { XP, cardioXp } from '../xp/xp.constants';
+import { cardioXp, stepsXp, qualifyCardio } from '../xp/xp.constants';
 
 // Google Health API v4 (health.googleapis.com) — the Fitbit-successor API.
 const SCOPES = [
@@ -192,6 +192,10 @@ export class HealthService {
           activeZoneMinutes: m.activeZoneMinutes
             ? Number(m.activeZoneMinutes)
             : null,
+          paceSecPerM:
+            m.averagePaceSecondsPerMeter != null
+              ? Number(m.averagePaceSecondsPerMeter)
+              : null,
           startTime: e.interval.startTime,
         };
       })
@@ -215,19 +219,35 @@ export class HealthService {
       }
     }
 
+    // Qualify cardio from the actual exercise sessions (not the day-wide AZM
+    // rollup, which over-counts): commute cycling & slow strolls don't count;
+    // dedicated rides, classes/runs, and brisk walks do. See qualifyCardio.
+    const { qualifies: cardioQualifies, azm: cardioAzm } =
+      qualifyCardio(cardioSessions);
+
     // cardio day + XP (once/day) — records the cardio day for streak/history too
-    if (activeZoneMinutes >= 20) {
+    if (cardioQualifies) {
       await this.xpService.award(
         'cardio',
-        cardioXp(activeZoneMinutes),
-        `Cardio · ${cardioMinutes} active min`,
+        cardioXp(cardioAzm),
+        `Cardio · ${cardioAzm} zone min`,
         dateStr,
       );
     }
-    // 10k steps bonus (once/day)
+    // 10k+ steps bonus (once/day, tiered)
     if (steps != null && steps >= 10000) {
-      await this.xpService.award('steps_bonus', XP.STEPS_BONUS, '10,000 steps', dateStr);
+      await this.xpService.award(
+        'steps_bonus',
+        stepsXp(steps),
+        `${steps.toLocaleString()} steps`,
+        dateStr,
+      );
     }
+
+    const caloriesBurned = cardioSessions.reduce(
+      (n, s) => n + (s.calories ?? 0),
+      0,
+    );
 
     return {
       steps,
@@ -238,7 +258,33 @@ export class HealthService {
       activeZoneMinutes: activeZoneMinutes || null,
       cardioMinutes: cardioMinutes || null,
       cardioSessions,
+      caloriesBurned: caloriesBurned || null,
     };
+  }
+
+  /** Exercise calories burned per day for a date range → { 'YYYY-MM-DD': kcal }. */
+  async burnedByDay(
+    start: string,
+    end: string,
+  ): Promise<Record<string, number>> {
+    const token = await this.accessToken();
+    const resp = await this.list(token, 'exercise');
+    const offSec = (o?: string) => (o ? parseInt(o, 10) || 0 : 0);
+    const localDay = (iso?: string, off?: string) =>
+      iso
+        ? new Date(new Date(iso).getTime() + offSec(off) * 1000)
+            .toISOString()
+            .slice(0, 10)
+        : '';
+    const out: Record<string, number> = {};
+    for (const p of resp?.dataPoints ?? []) {
+      const e = p?.exercise;
+      if (!e?.interval) continue;
+      const day = localDay(e.interval.startTime, e.interval.startUtcOffset);
+      if (day < start || day > end) continue;
+      out[day] = (out[day] ?? 0) + Number(e.metricsSummary?.caloriesKcal ?? 0);
+    }
+    return out;
   }
 
   /** Asleep hours for the night you woke on `dateStr` (excludes AWAKE stages). */
